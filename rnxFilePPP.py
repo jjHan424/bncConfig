@@ -6,23 +6,35 @@ import logging
 import platform
 from datetime import datetime
 import configparser
+import subprocess
 #=== SETING ===#
 global_platform = platform.system()
 OBSDOY = False
 OBSSAMPLE = 0
 PURPOSE = "bncTropRnx"
 PPPMODEL = "IF"
-global_sigPos,global_noisePos,global_sigTrop,global_noiseTrop = 0.1,100,0.1,3e-6
+global_sigPos,global_noisePos,global_sigTrop,global_noiseTrop = 0.1,0.1,0.1,8e-4
 global_year = int(sys.argv[1])
 if global_platform == "Windows":
     global_configFile = r"D:\Tools\bncConfig\baseConfig\tropRnxFilePPP.bnc"
-    global_ssrPath = r"E:\PhD_1\4.RTZTD\Data\SSR"
+    global_ssrPath = r"E:\PhD_1\4.RTZTD\BNC\BCN_RINEX"
     global_navPath = r"E:\PhD_1\4.RTZTD\Data\NAV"
     global_obsPath = r"E:\PhD_1\4.RTZTD\Data\OBS"
     global_crdFile = r"E:\PhD_1\4.RTZTD\BNC\Model\bnc_16sites.crd"
     global_atxFile = r"E:\PhD_1\4.RTZTD\BNC\Model\igs20.atx"
     global_workDir = r"E:\PhD_1\4.RTZTD\BNC\BCN_RINEX"
+elif global_platform == "Linux":
+    global_configFile = "/D6/junjie/Tools/bncConfig/baseConfig/tropRnxFilePPP.bnc"
+    global_ssrPath = "/D6/junjie/Data/{:0>4}/SSR".format(global_year)
+    global_navPath = "/D6/junjie/Data/{:0>4}/NAV".format(global_year)
+    global_obsPath = "/D6/junjie/Data/{:0>4}/OBS_30S".format(global_year)
+    global_crdFile = "/D6/junjie/Project/A-RTZTD/BNC_RINEX/bnc_16sites.crd"
+    global_atxFile = "/D6/junjie/Project/A-RTZTD/BNC_RINEX/igs20.atx"
+    global_workDir = "/D6/junjie/Project/A-RTZTD/BNC_RINEX/TEST"
+    global_software = "/D6/junjie/Software/BNC/BNC_250503/bnc"
 cur_time = datetime.now()
+if not os.path.exists(global_workDir):
+    os.mkdir(global_workDir)
 global_logfile = os.path.join(global_workDir,"{}_{:0>4d}{:0>2d}{:0>2d}_{:0>2d}{:0>2d}{:0>2d}.pylog".format(PURPOSE,cur_time.year,cur_time.month,cur_time.day,cur_time.hour,cur_time.minute,cur_time.second))
 logging.basicConfig(level=logging.DEBUG,filename=global_logfile,filemode="w",format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
 
@@ -37,11 +49,13 @@ def _changeValue(configName,section,key,value):
 
 def setInputNav(configName,year,doy,count,AC):
     navFile = ""
-    count = count + 1
-    doy = doy - 1
+    count = count + 2
+    doy = doy - 2
     while count!=0:
         count = count - 1
         doy = doy + 1
+        if count == 0:
+            break
         if not os.path.exists(os.path.join(global_navPath,"BRDC00{}_S_{:0>4}{:0>3}0000_01D_MN.rnx".format(AC,year,doy))):
             logging.warning("This Nav file doesn't exist: {}".format(os.path.join(global_navPath,"BRDC00{}_S_{:0>4}{:0>3}0000_01D_MN.rnx".format(AC,year,doy))))
             continue
@@ -69,6 +83,8 @@ def setInputObs(configName,year,doy,count,siteList,source,sampling):
     while count!=0:
         count = count - 1
         doy = doy + 1
+        if count == 0:
+            break
         for curSite in siteList:
             curObsPath = os.path.join(global_obsPath,"{}_{}_{:0>4}{:0>3}0000_01D_{:0>2}S_MO.rnx".format(curSite,source,year,doy,sampling))
             if OBSDOY:
@@ -121,8 +137,8 @@ def setOutputTropFile(configName,curPath,year,doy,count,ac,system):
 def setstaTable(configName,siteList):
     staTable = ""
     for cur_site in siteList:
-        cur_table = "{},{:.2f},{:.2f},{:.2f},{},{},{},{},{},7777,G:1&C G:2&W R:1&C R:2&P E:1&C E:5&Q C:26&I".format(\
-            cur_site,global_sigPos,global_sigPos,global_sigPos*1.5,global_noisePos,global_noisePos,global_noisePos,
+        cur_table = "{},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{},{},7777,G:12&CWPSLX R:12&CP E:1&CBX E:5&QIX C:26&IQX".format(\
+            cur_site,global_sigPos,global_sigPos,global_sigPos*1.5,global_noisePos,global_noisePos,global_noisePos*1.5,
             global_sigTrop,global_noiseTrop)
         staTable = staTable + "\"" + cur_table + "\"" + ","
     _changeValue(configName,"PPP","staTable",staTable[0:-1])
@@ -169,7 +185,11 @@ if __name__ == '__main__':
         system = sys.argv[7]
     else:
         system = "GEC"
-    if len(sys.argv) > 9:
+    if len(sys.argv) > 8:
+        calMode = sys.argv[8]
+    else:
+        calMode = "Static"
+    if len(sys.argv) > 10:
         startTime = sys.argv[8].replace("_"," ")
         endTime = sys.argv[9].replace("_"," ")
     else:
@@ -186,13 +206,13 @@ if __name__ == '__main__':
 
     #=== INPUTS ===#
     #Nav
-    if not setInputNav(curConfig,year,doy,count,"WRD"):
+    if not setInputNav(curConfig,year,doy,count,"IGS"):
         sys.exit()
     #SSR
     if not setInputSSR(curConfig,year,doy,count,ac+"0"):
         sys.exit()
     #Obs
-    if not setInputObs(curConfig,year,doy,count,siteList,"S",5):
+    if not setInputObs(curConfig,year,doy,count,siteList,"R",30):
         sys.exit()
     #Crd
     if not setInputModel(curConfig):
@@ -206,5 +226,12 @@ if __name__ == '__main__':
     _changeValue(curConfig,"Modify","resetInterval","{} sec".format(2*interval))
     _changeValue(curConfig,"Modify","startTime",startTime)
     _changeValue(curConfig,"Modify","endTime",endTime)
+    _changeValue(curConfig,"Modify","filterMode",calMode)
     setstaTable(curConfig,siteList)
     setSystem(curConfig,system)
+    #=== LAUNCH ===#
+    cmd = "{} --conf ./{} --nw".format(global_software,curConfig)
+    # try:
+    #     subprocess.getstatusoutput(cmd)
+    # except OSError:
+    #     logging.error("RUN FAILED!!!: {}".format(cmd))
